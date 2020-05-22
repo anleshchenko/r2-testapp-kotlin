@@ -48,6 +48,7 @@ import org.jetbrains.anko.appcompat.v7.Appcompat
 import org.jetbrains.anko.design.*
 import org.jetbrains.anko.recyclerview.v7.recyclerView
 import org.json.JSONObject
+import org.readium.r2.navigator.pdf.R2PdfActivity
 import org.readium.r2.opds.OPDS1Parser
 import org.readium.r2.opds.OPDS2Parser
 import org.readium.r2.shared.Injectable
@@ -883,11 +884,15 @@ open class LibraryActivity : AppCompatActivity(), BooksAdapter.RecyclerViewClick
     }
 
     private fun startActivity(publicationPath: String, book: Book, publication: Publication, coverByteArray: ByteArray? = null) {
-        val intent = Intent(this, when (publication.type) {
-            Publication.TYPE.AUDIO -> AudiobookActivity::class.java
-            Publication.TYPE.CBZ -> ComicActivity::class.java
-            Publication.TYPE.DiViNa -> DiViNaActivity::class.java
-            else -> EpubActivity::class.java
+        val format = Format.of(File(publicationPath)) ?: return
+
+        val intent = Intent(this, when (format) {
+            Format.AUDIOBOOK -> AudiobookActivity::class.java
+            Format.CBZ -> ComicActivity::class.java
+            Format.DIVINA -> DiViNaActivity::class.java
+            Format.EPUB -> EpubActivity::class.java
+            Format.PDF, Format.LCP_PROTECTED_PDF -> R2PdfActivity::class.java
+            else -> return
         })
 
         intent.apply {
