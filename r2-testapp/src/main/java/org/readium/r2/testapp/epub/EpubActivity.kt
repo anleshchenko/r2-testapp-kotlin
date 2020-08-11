@@ -11,6 +11,7 @@
 package org.readium.r2.testapp.epub
 
 import android.app.Activity
+import android.app.ProgressDialog
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -127,6 +128,12 @@ class EpubActivity : R2EpubActivity(), CoroutineScope, NavigatorDelegate/*, Visu
 
     private var mode: ActionMode? = null
     private var popupWindow: PopupWindow? = null
+
+    private var openedPagesNumber = 0
+    private var searchQuery: String? = null
+    private var markupQuery: String? = null
+
+    private lateinit var progressDialog: ProgressDialog
 
     /**
      * Manage activity creation.
@@ -292,11 +299,10 @@ class EpubActivity : R2EpubActivity(), CoroutineScope, NavigatorDelegate/*, Visu
 
         val searchView = menuSearch?.actionView as SearchView
 
-        searchView.isFocusable = false
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
 
             override fun onQueryTextSubmit(query: String?): Boolean {
-
+                searchView.clearFocus()
                 searchResult.clear()
                 searchResultAdapter.notifyDataSetChanged()
 
@@ -307,31 +313,16 @@ class EpubActivity : R2EpubActivity(), CoroutineScope, NavigatorDelegate/*, Visu
                     //Saving searched term
                     searchTerm = query
                     //Initializing our custom search interfaces
-                    val progress = indeterminateProgressDialog(getString(R.string.progress_wait_while_searching_book))
-                    progress.show()
+                    progressDialog = indeterminateProgressDialog(getString(R.string.progress_wait_while_searching_book))
+                    progressDialog.show()
 
                     val markJSSearchInterface = MarkJSSearchEngine(this@EpubActivity)
-                    Handler().postDelayed({
-                        markJSSearchInterface.search(query) { (last, result) ->
-                            searchResult.clear()
-                            searchResult.addAll(result)
-                            searchResultAdapter.notifyDataSetChanged()
 
-                            //Saving results + keyword only when JS is fully executed on all resources
-                            val editor = searchStorage.edit()
-                            val stringResults = Gson().toJson(result)
-                            editor.putString("result", stringResults)
-                            editor.putString("term", searchTerm)
-                            editor.putLong("book", bookId)
-                            editor.apply()
+                    searchQuery = query
 
-                            if (last) {
-                                progress.dismiss()
-                            }
-                        }
-                    }, 500)
-
-
+                    if (openedPagesNumber == publication.readingOrder.size) {
+                        performSearch()
+                    }
                 }
                 return false
             }
@@ -573,21 +564,21 @@ class EpubActivity : R2EpubActivity(), CoroutineScope, NavigatorDelegate/*, Visu
 
                         val index = fragments.getValue("i").toInt()
                         val searchStorage = getSharedPreferences("org.readium.r2.search", Context.MODE_PRIVATE)
-                        Handler().postDelayed({
-                            if (publication.metadata.rendition.layout == RenditionLayout.Reflowable) {
-                                val currentFragment = (resourcePager.adapter as R2PagerAdapter).getCurrentFragment() as R2EpubPageFragment
-                                val resource = publication.readingOrder[resourcePager.currentItem]
-                                val resourceHref = resource.href ?: ""
-                                val resourceType = resource.typeLink ?: ""
-                                val resourceTitle = resource.title ?: ""
+                        if (publication.metadata.rendition.layout == RenditionLayout.Reflowable) {
+                            val currentFragment = (resourcePager.adapter as R2PagerAdapter).getCurrentFragment() as R2EpubPageFragment
+                            val resource = publication.readingOrder[resourcePager.currentItem]
+                            val resourceHref = resource.href ?: ""
+                            val resourceType = resource.typeLink ?: ""
+                            val resourceTitle = resource.title ?: ""
 
+                            if (currentFragment.isWebViewReady) {
                                 currentFragment.webView.runJavaScript("markSearch('${searchStorage.getString("term", null)}', null, '$resourceHref', '$resourceType', '$resourceTitle', '$index')") { result ->
-
-                                    if (DEBUG) Timber.d("###### $result")
-
+                                    markupQuery = null
                                 }
+                            } else {
+                                markupQuery = "markSearch('${searchStorage.getString("term", null)}', null, '$resourceHref', '$resourceType', '$resourceTitle', '$index')"
                             }
-                        }, 1200)
+                        }
                     } catch (e: Exception) {
                     }
                 }
@@ -804,7 +795,51 @@ class EpubActivity : R2EpubActivity(), CoroutineScope, NavigatorDelegate/*, Visu
 
     override fun onPageLoaded() {
         super.onPageLoaded()
+        if (++openedPagesNumber == publication.readingOrder.size) {
+            performSearch()
+        }
+        performMarkup()
         drawHighlight()
+    }
+
+    override fun onPageDestroyed() {
+        openedPagesNumber--
+        super.onPageDestroyed()
+    }
+
+    private fun performSearch() {
+        searchQuery?.let { query ->
+            val markJSSearchInterface = MarkJSSearchEngine(this@EpubActivity)
+
+            markJSSearchInterface.search(query) { (last, result) ->
+                searchResult.clear()
+                searchResult.addAll(result)
+                searchResultAdapter.notifyDataSetChanged()
+
+                //Saving results + keyword only when JS is fully executed on all resources
+                val editor = searchStorage.edit()
+                val stringResults = Gson().toJson(result)
+                editor.putString("result", stringResults)
+                editor.putString("term", searchTerm)
+                editor.putLong("book", bookId)
+                editor.apply()
+
+                if (last) {
+                    progressDialog.dismiss()
+                    resourcePager.offscreenPageLimit = 1
+                    searchQuery = null
+                }
+            }
+        }
+    }
+
+    private fun performMarkup() {
+        val currentFragment = (resourcePager.adapter as R2PagerAdapter).getCurrentFragment() as R2EpubPageFragment
+        if (markupQuery != null && currentFragment.isWebViewReady) {
+            currentFragment.webView.evaluateJavascript(markupQuery) {
+                markupQuery = null
+            }
+        }
     }
 
     override fun highlightActivated(id: String) {
@@ -997,5 +1032,4 @@ class EpubActivity : R2EpubActivity(), CoroutineScope, NavigatorDelegate/*, Visu
             play_pause?.setImageResource(android.R.drawable.ic_media_play)
         }
     }
-
 }
