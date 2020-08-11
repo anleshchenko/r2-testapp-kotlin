@@ -1,0 +1,3 @@
+[submodule "r2-navigator-kotlin"]
+	path = r2-navigator-kotlin
+	url = https://github.com/anleshchenko/r2-navigator-kotlin
