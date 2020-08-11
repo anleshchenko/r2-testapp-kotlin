@@ -33,7 +33,6 @@ class MarkJSSearchEngine(private var listener: IR2Activity) : SearchInterface {
             val resourceHref = resource.href ?: ""
             val resourceType = resource.typeLink ?: ""
             val resourceTitle = resource.title ?: ""
-            Handler().postDelayed({
                 fragment.webView.runJavaScript("markSearch('${keyword}', null, '$resourceHref', '$resourceType', '$resourceTitle')") { result ->
                     if (DEBUG) Timber.tag("SEARCH").d("result $result")
 
@@ -63,8 +62,6 @@ class MarkJSSearchEngine(private var listener: IR2Activity) : SearchInterface {
                         callback(Pair(false, searchResult))
                     }
                 }
-            }, 500)
-
         }
 
     }

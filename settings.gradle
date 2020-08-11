@@ -1,1 +1,3 @@
-include ':r2-testapp'
+include ':r2-testapp', ':r2-navigator'
+
+project(':r2-navigator').projectDir = new File('r2-navigator-kotlin/r2-navigator')
